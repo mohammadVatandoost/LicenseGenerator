@@ -1,0 +1,225 @@
+#include "backend.h"
+
+BackEnd::BackEnd()
+{
+    generateKeyPair();
+//    activationCode = generateActivationCode();
+    activationCode = "21FEC5540C156BC15DB022FCAAF717DE";
+    verifyHash(signActiveCode(activationCode, Private_Key), Public_Key, activationCode);
+}
+
+void BackEnd::generateKeyPair()
+{
+
+    if(Assistant::isFileExists("privkey.txt") && Assistant::isFileExists("pubkey.txt")) {
+        CryptoPP::ByteQueue pvBytes, pbBytes;
+
+        CryptoPP::FileSource pvFile("privkey.txt", true, new CryptoPP::Base64Decoder);
+        pvFile.TransferTo(pvBytes);
+        pvBytes.MessageEnd();
+        CryptoPP::RSA::PrivateKey privateKey;
+        privateKey.Load(pvBytes);
+
+        CryptoPP::FileSource pbFile("pubkey.txt", true, new CryptoPP::Base64Decoder);
+        pbFile.TransferTo(pbBytes);
+        pbBytes.MessageEnd();
+        CryptoPP::RSA::PublicKey publicKey;
+        publicKey.Load(pbBytes);
+
+        string pvKey, pbKey;
+
+        CryptoPP::Base64Encoder privKeySink(new CryptoPP::StringSink(pvKey));
+        privateKey.DEREncode(privKeySink);
+        privKeySink.MessageEnd();
+
+        CryptoPP::Base64Encoder pubKeySink(new CryptoPP::StringSink(pbKey));
+        publicKey.DEREncode(pubKeySink);
+        pubKeySink.MessageEnd();
+
+        Private_Key = QString::fromStdString(pvKey);
+        Public_Key = QString::fromStdString(pbKey);
+
+        qDebug() << "generateKeyPair files exist";
+
+    } else {
+        CryptoPP::AutoSeededRandomPool rng;
+        CryptoPP::InvertibleRSAFunction privkey;
+        privkey.Initialize(rng, 512);
+
+        CryptoPP::RSA::PrivateKey privateKey(privkey);
+        CryptoPP::RSA::PublicKey publicKey(privkey);
+
+        string pvKey;
+        string pbKey;
+
+        CryptoPP::Base64Encoder privKeySink(new CryptoPP::StringSink(pvKey));
+        privateKey.DEREncode(privKeySink);
+        privKeySink.MessageEnd();
+
+        CryptoPP::Base64Encoder pubKeySink(new CryptoPP::StringSink(pbKey));
+        publicKey.DEREncode(pubKeySink);
+        pubKeySink.MessageEnd();
+
+        CryptoPP::Base64Encoder privkeysink(new CryptoPP::FileSink("privkey.txt"));
+        privateKey.DEREncode(privkeysink);
+
+        CryptoPP::Base64Encoder pubkeysink(new CryptoPP::FileSink("pubkey.txt"));
+        publicKey.DEREncode(pubkeysink);
+
+        privkeysink.MessageEnd();
+        pubkeysink.MessageEnd();
+
+
+        Private_Key = QString::fromStdString(pvKey );
+        Public_Key = QString::fromStdString(pbKey);
+
+        qDebug() << "generateKeyPair files does not exist";
+    }
+
+    qDebug()<< "Private_Key";
+    qDebug()<< Private_Key;
+
+    qDebug()<< "Public_Key";
+    qDebug()<< Public_Key;
+
+}
+
+QString BackEnd::getPrivateKey()
+{
+    return Private_Key;
+}
+
+QString BackEnd::getPublicKey()
+{
+    return Public_Key;
+}
+
+QString BackEnd::generateActivationCode()
+{
+
+    CryptoPP::SecByteBlock key(CryptoPP::AES::DEFAULT_KEYLENGTH), iv(CryptoPP::AES::BLOCKSIZE);
+    string k;
+
+    OS_GenerateRandomBlock(true, key, key.size());
+
+    CryptoPP::HexEncoder hex(new CryptoPP::StringSink(k));
+    hex.Put(key, key.size());
+    hex.MessageEnd();
+    cout<<"active code:"<<endl;
+    cout<< k<<endl;
+    return QString::fromStdString(k);
+}
+
+QString BackEnd::signActiveCode(QString code, QString privateKey)
+{
+    CryptoPP::AutoSeededRandomPool rng;
+
+    //Read private key
+    CryptoPP::ByteQueue bytes;
+    CryptoPP::FileSource file("privkey.txt", true, new CryptoPP::Base64Decoder);
+    file.TransferTo(bytes);
+    bytes.MessageEnd();
+    CryptoPP::RSA::PrivateKey private_Key;
+    private_Key.Load(bytes);
+
+    //Sign message
+    string activeCode = code.toStdString();
+    cout<< "signActiveCode active code"<<endl;
+    cout<< activeCode<<endl;
+    //Sign message
+    CryptoPP::RSASSA_PKCS1v15_SHA_Signer privkey(private_Key);
+
+//    CryptoPP::SecByteBlock sbbSignature(privkey.SignatureLength());
+//    privkey.SignMessage(
+//        rng,
+//        (CryptoPP::byte const*) activeCode.data(),
+//        activeCode.size(),
+//        sbbSignature);
+
+    size_t maxLength = privkey.MaxSignatureLength();
+    CryptoPP::SecByteBlock sbbSignature(maxLength);
+
+    size_t signatureLength = privkey.SignMessage(rng,
+        (CryptoPP::byte const*) activeCode.data(), activeCode.size(),
+        sbbSignature);
+
+    if(maxLength != signatureLength)
+        sbbSignature.resize(signatureLength);
+
+
+    string signed_data;
+    CryptoPP::Base64Encoder b(new CryptoPP::StringSink(signed_data));
+    b.Put(sbbSignature.begin(), sbbSignature.size());
+    b.MessageEnd();
+
+//    temp_subsig = sbbSignature;
+//    string signed_data;
+//    CryptoPP::HexEncoder hex(new CryptoPP::StringSink(signed_data));
+//    hex.Put(sbbSignature, sbbSignature.size());
+
+
+//    CryptoPP::FileSink sink("signed.dat");
+//    sink.Put((CryptoPP::byte const*) strContents.data(), strContents.size());
+//    CryptoPP::FileSink sinksig("sig.dat");
+//    sinksig.Put(sbbSignature, sbbSignature.size());
+//    hex.MessageEnd();
+//    CryptoPP::RSASSA_PKCS1v15_SHA_Signer privkey(private_Key);
+//    CryptoPP::SecByteBlock sbbSignature(privkey.SignatureLength());
+//    privkey.SignMessage(
+//        rng,
+//        (CryptoPP::byte const*) strContents.data(),
+//        strContents.size(),
+//        sbbSignature);
+
+    cout<< "signActiveCode "<<endl;
+    cout<< signed_data <<endl;
+    return QString::fromStdString(signed_data);
+}
+
+bool BackEnd::verifyHash(QString hash, QString publicKey, QString activation_code)
+{
+    //Read public key
+    CryptoPP::ByteQueue bytes;
+    CryptoPP::FileSource file("pubkey.txt", true, new CryptoPP::Base64Decoder);
+    file.TransferTo(bytes);
+    bytes.MessageEnd();
+    CryptoPP::RSA::PublicKey pubKey;
+    pubKey.Load(bytes);
+
+    CryptoPP::RSASSA_PKCS1v15_SHA_Verifier verifier(pubKey);
+
+//    cout<< "hash:"<<endl;
+//    cout<<hash.toStdString()<<endl;
+
+
+    string tsig;
+    CryptoPP::StringSource ss(hash.toStdString(), true,
+        new CryptoPP::Base64Decoder(
+            new CryptoPP::StringSink(tsig)
+        )
+    );
+
+    string combined(activation_code.toStdString());
+    combined.append(tsig);
+
+//    cout<< "combined"<<endl;
+//    cout<< combined<<endl;;
+    
+    //Verify signature
+    try
+    {
+        CryptoPP::StringSource(combined, true,
+            new CryptoPP::SignatureVerificationFilter(
+                verifier, NULL,
+                CryptoPP::SignatureVerificationFilter::THROW_EXCEPTION
+           )
+        );
+        cout << "Signature OK" << endl;
+        return true;
+    }
+    catch(CryptoPP::SignatureVerificationFilter::SignatureVerificationFailed &err)
+    {
+        cout << err.what() << endl;
+        return false;
+    }
+}
